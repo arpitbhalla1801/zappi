@@ -1,0 +1,30 @@
+{
+  "name": "zappi",
+  "version": "1.0.0",
+  "description": "Zappi is a cross-platform desktop utility that helps you reinstall your previously used software on a new device with **one click**. Designed for ease of use and speed, Zappi makes setting up a fresh machine as effortless as possible.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arpitbhalla1801/zappi.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/arpitbhalla1801/zappi/issues"
+  },
+  "homepage": "https://github.com/arpitbhalla1801/zappi#readme",
+  "dependencies": {
+    "electron": "^36.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@electron/remote": "^2.1.2",
+    "concurrently": "^9.1.2",
+    "electron-builder": "^26.0.12"
+  }
+}
