@@ -13,7 +13,7 @@ function createWindow() {
     },
   });
 
-  win.loadURL(`file://${path.join(__dirname, '../renderer/index.html')}`);
+  win.loadURL(`file://${path.join(__dirname, '../../public/index.html')}`);
 }
 
 app.whenReady().then(createWindow);

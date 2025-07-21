@@ -2,8 +2,14 @@
   "name": "zappi",
   "version": "1.0.0",
   "description": "Zappi is a cross-platform desktop utility that helps you reinstall your previously used software on a new device with **one click**. Designed for ease of use and speed, Zappi makes setting up a fresh machine as effortless as possible.",
-  "main": "index.js",
+  "main": "src/main/main.js",
   "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build-renderer": "webpack",
+    "build-renderer-watch": "webpack --watch",
+    "dist": "electron-builder --publish=never",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -25,6 +31,13 @@
   "devDependencies": {
     "@electron/remote": "^2.1.2",
     "concurrently": "^9.1.2",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "@babel/core": "^7.23.0",
+    "@babel/preset-react": "^7.22.0",
+    "babel-loader": "^9.1.0",
+    "css-loader": "^6.8.0",
+    "style-loader": "^3.3.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
   }
 }
