@@ -10,7 +10,7 @@ const execAsync = util.promisify(exec);
  */
 async function scanApps() {
   const platform = os.platform();
-  
+  console.log(`[scanApps] Scanning apps for platform: ${platform}`);
   try {
     switch (platform) {
       case 'darwin':
@@ -24,6 +24,15 @@ async function scanApps() {
     }
   } catch (error) {
     console.error('Error scanning apps:', error);
+    // Also log error to a file for user inspection
+    try {
+      const fs = require('fs');
+      const cwd = process.cwd();
+      console.error('[scanApps] Current working directory:', cwd);
+      fs.appendFileSync('scan-error.log', `[${new Date().toISOString()}] Error scanning apps: ${error && error.stack ? error.stack : error}\n`);
+    } catch (logErr) {
+      console.error('[scanApps] Failed to write scan-error.log:', logErr);
+    }
     return getSampleApps(); // Return sample data for demo
   }
 }
@@ -48,22 +57,63 @@ async function scanMacApps() {
 
 async function scanWindowsApps() {
   try {
-    // Use PowerShell to get installed programs
-    const { stdout } = await execAsync(
-      'powershell "Get-WmiObject -Class Win32_Product | Select-Object Name | ForEach-Object { $_.Name }"'
-    );
-    
-    const apps = stdout
+    // 1. Registry scan (as before)
+    const psScript = [
+      "$paths = @('HKLM:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall')",
+      '$apps = @()',
+      'foreach ($path in $paths) {',
+      '  if (Test-Path $path) {',
+      '    $apps += Get-ChildItem $path | ForEach-Object {',
+      '      $displayName = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName',
+      '      if ($displayName) { $displayName }',
+      '    }',
+      '  }',
+      '}',
+      '$apps | Sort-Object -Unique'
+    ].join('; ');
+    const { stdout: regStdout } = await execAsync(`powershell -NoProfile -Command \"${psScript}\"`);
+    let regApps = regStdout
       .split('\n')
-      .filter(app => app.trim() && !app.includes('Name') && !app.includes('----'))
-      .map(app => ({
-        name: app.trim(),
-        installed: true,
-        platform: 'win32'
-      }));
-    
-    return apps.slice(0, 20); // Limit to first 20 for demo
+      .map(app => app.trim())
+      .filter(app => app.length > 0);
+
+    // 2. Program Files scan
+    const programDirs = [
+      process.env['ProgramFiles'],
+      process.env['ProgramFiles(x86)'],
+      process.env['LOCALAPPDATA'] ? `${process.env['LOCALAPPDATA']}\\Programs` : null
+    ].filter(Boolean);
+    let fileApps = [];
+    for (const dir of programDirs) {
+      try {
+        const { stdout } = await execAsync(`powershell -NoProfile -Command \"Get-ChildItem -Path '${dir}' -Directory | Select-Object -ExpandProperty Name\"`);
+        fileApps = fileApps.concat(stdout.split('\n').map(f => f.trim()).filter(f => f.length > 0));
+      } catch (e) { /* ignore */ }
+    }
+
+    // 3. Start Menu shortcuts scan
+    let shortcutApps = [];
+    const startMenuDirs = [
+      `${process.env['ProgramData']}\\Microsoft\\Windows\\Start Menu\\Programs`,
+      `${process.env['APPDATA']}\\Microsoft\\Windows\\Start Menu\\Programs`
+    ];
+    for (const dir of startMenuDirs) {
+      try {
+        const { stdout } = await execAsync(`powershell -NoProfile -Command \"Get-ChildItem -Path '${dir}' -Recurse -Filter *.lnk | ForEach-Object { $_.BaseName }\"`);
+        shortcutApps = shortcutApps.concat(stdout.split('\n').map(f => f.trim()).filter(f => f.length > 0));
+      } catch (e) { /* ignore */ }
+    }
+
+    // Combine and deduplicate
+    const allAppsSet = new Set([...regApps, ...fileApps, ...shortcutApps]);
+    const allApps = Array.from(allAppsSet).map(app => ({
+      name: app,
+      installed: true,
+      platform: 'win32'
+    }));
+    return allApps;
   } catch (error) {
+    console.error('Error scanning Windows apps:', error);
     return getSampleWindowsApps();
   }
 }
