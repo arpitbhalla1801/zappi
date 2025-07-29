@@ -1,6 +1,8 @@
 const os = require('os');
 const { exec } = require('child_process');
 const util = require('util');
+const fs = require('fs');
+const path = require('path');
 
 const execAsync = util.promisify(exec);
 
@@ -26,7 +28,6 @@ async function scanApps() {
     console.error('Error scanning apps:', error);
     // Also log error to a file for user inspection
     try {
-      const fs = require('fs');
       const cwd = process.cwd();
       console.error('[scanApps] Current working directory:', cwd);
       fs.appendFileSync('scan-error.log', `[${new Date().toISOString()}] Error scanning apps: ${error && error.stack ? error.stack : error}\n`);
@@ -57,41 +58,6 @@ async function scanMacApps() {
 
 async function scanWindowsApps() {
   try {
-    // 1. Registry scan (as before)
-    const psScript = [
-      "$paths = @('HKLM:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall')",
-      '$apps = @()',
-      'foreach ($path in $paths) {',
-      '  if (Test-Path $path) {',
-      '    $apps += Get-ChildItem $path | ForEach-Object {',
-      '      $displayName = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName',
-      '      if ($displayName) { $displayName }',
-      '    }',
-      '  }',
-      '}',
-      '$apps | Sort-Object -Unique'
-    ].join('; ');
-    const { stdout: regStdout } = await execAsync(`powershell -NoProfile -Command \"${psScript}\"`);
-    let regApps = regStdout
-      .split('\n')
-      .map(app => app.trim())
-      .filter(app => app.length > 0);
-
-    // 2. Program Files scan
-    const programDirs = [
-      process.env['ProgramFiles'],
-      process.env['ProgramFiles(x86)'],
-      process.env['LOCALAPPDATA'] ? `${process.env['LOCALAPPDATA']}\\Programs` : null
-    ].filter(Boolean);
-    let fileApps = [];
-    for (const dir of programDirs) {
-      try {
-        const { stdout } = await execAsync(`powershell -NoProfile -Command \"Get-ChildItem -Path '${dir}' -Directory | Select-Object -ExpandProperty Name\"`);
-        fileApps = fileApps.concat(stdout.split('\n').map(f => f.trim()).filter(f => f.length > 0));
-      } catch (e) { /* ignore */ }
-    }
-
-    // 3. Start Menu shortcuts scan
     let shortcutApps = [];
     const startMenuDirs = [
       `${process.env['ProgramData']}\\Microsoft\\Windows\\Start Menu\\Programs`,
@@ -103,68 +69,41 @@ async function scanWindowsApps() {
         shortcutApps = shortcutApps.concat(stdout.split('\n').map(f => f.trim()).filter(f => f.length > 0));
       } catch (e) { /* ignore */ }
     }
-
-    // Combine and deduplicate
-    const allAppsSet = new Set([...regApps, ...fileApps, ...shortcutApps]);
+    // Deduplicate
+    const allAppsSet = new Set(shortcutApps);
     const allApps = Array.from(allAppsSet).map(app => ({
       name: app,
       installed: true,
       platform: 'win32'
     }));
-    return allApps;
+    if (allApps.length > 0) return allApps;
+    return getSampleWindowsApps();
   } catch (error) {
-    console.error('Error scanning Windows apps:', error);
     return getSampleWindowsApps();
   }
 }
 
 async function scanLinuxApps() {
   try {
-    // Try different package managers
+    const desktopDirs = [
+      '/usr/share/applications',
+      path.join(os.homedir(), '.local/share/applications')
+    ];
     let apps = [];
-    
-    // Try apt (Ubuntu/Debian)
-    try {
-      const { stdout } = await execAsync('apt list --installed 2>/dev/null | head -20');
-      apps = stdout
-        .split('\n')
-        .filter(line => line.includes('/'))
-        .map(line => ({
-          name: line.split('/')[0],
-          installed: true,
-          platform: 'linux'
-        }));
-    } catch (aptError) {
-      // Try dnf (Fedora)
-      try {
-        const { stdout } = await execAsync('dnf list installed | head -20');
-        apps = stdout
-          .split('\n')
-          .filter(line => line.includes('.'))
-          .map(line => ({
-            name: line.split('.')[0],
+    for (const dir of desktopDirs) {
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir).filter(f => f.endsWith('.desktop'));
+        apps = apps.concat(
+          files.map(f => ({
+            name: f.replace('.desktop', ''),
             installed: true,
             platform: 'linux'
-          }));
-      } catch (dnfError) {
-        // Try pacman (Arch)
-        try {
-          const { stdout } = await execAsync('pacman -Q | head -20');
-          apps = stdout
-            .split('\n')
-            .filter(line => line.trim())
-            .map(line => ({
-              name: line.split(' ')[0],
-              installed: true,
-              platform: 'linux'
-            }));
-        } catch (pacmanError) {
-          return getSampleLinuxApps();
-        }
+          }))
+        );
       }
     }
-    
-    return apps.slice(0, 20);
+    if (apps.length > 0) return apps;
+    return getSampleLinuxApps();
   } catch (error) {
     return getSampleLinuxApps();
   }
